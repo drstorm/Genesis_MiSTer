@@ -244,7 +244,7 @@ video_freak video_freak
 // 0         1         2         3          4         5         6   
 // 01234567890123456789012345678901 23456789012345678901234567890123
 // 0123456789ABCDEFGHIJKLMNOPQRSTUV 0123456789ABCDEFGHIJKLMNOPQRSTUV
-// XXXXXXXXXXXX XXXXXXXXXXXXXXXXXXX XXXXXXXXXXXXXXXXXXXXXXXX
+// XXXXXXXXXXXX XXXXXXXXXXXXXXXXXXX XXXXXXXXXXXXXXXXXXXXXXXXX
 
 `include "build_id.v"
 localparam CONF_STR = {
@@ -275,6 +275,7 @@ localparam CONF_STR = {
 	"P1-;",
 	"P1OT,Border,No,Yes;",
 	"P1oEF,Composite Blend,Off,On,Adaptive;",
+	"P1oO,Old TV,Off,On;",
 	"P1OA,CRAM Dots,Off,On;",
 	"P1-;",
 	"P1OEF,Audio Filter,Model 1,Model 2,Minimal,No Filter;",
@@ -582,6 +583,7 @@ system system
 
 wire TRANSP_DETECT;
 wire cofi_enable = status[46] || (status[47] && TRANSP_DETECT);
+wire bw_enable = status[56];
 
 wire PAL = status[7];
 
@@ -639,7 +641,8 @@ assign VGA_SL = {~interlace,~interlace}&sl[1:0];
 reg old_ce_pix;
 always @(posedge CLK_VIDEO) old_ce_pix <= ce_pix;
 
-wire [7:0] red, green, blue;
+wire [7:0] red_c, green_c, blue_c;
+wire hs_c, vs_c, hblank_c, vblank_c;
 
 cofi coffee (
 	.clk(clk_sys),
@@ -658,12 +661,34 @@ cofi coffee (
 	.vblank_out(vblank_c),
 	.hs_out(hs_c),
 	.vs_out(vs_c),
-	.red_out(red),
-	.green_out(green),
-	.blue_out(blue)
+	.red_out(red_c),
+	.green_out(green_c),
+	.blue_out(blue_c)
 );
 
-wire hs_c,vs_c,hblank_c,vblank_c;
+jtframe_wirebw #(.WIN(8), .WOUT(8)) u_wirebw(
+    .clk(clk_sys),
+    .spl_in(ce_pix),
+    .r_in(red_c),
+    .g_in(green_c),
+    .b_in(blue_c),
+    .HS_in(hs_c),
+    .VS_in(vs_c),
+    .HB_in(hblank_c),
+    .VB_in(vblank_c),
+    .enable(bw_enable),
+    .HS_out(hs_bw),
+    .VS_out(vs_bw),
+    .HB_out(hblank_bw),
+    .VB_out(vblank_bw),
+    .r_out(red_bw),
+    .g_out(green_bw),
+    .b_out(blue_bw)
+);
+
+wire [7:0] red_bw, green_bw, blue_bw;
+wire hs_bw, vs_bw, hblank_bw, vblank_bw;
+
 
 video_mixer #(.LINE_LENGTH(320), .HALF_DEPTH(0), .GAMMA(1)) video_mixer
 (
@@ -676,15 +701,15 @@ video_mixer #(.LINE_LENGTH(320), .HALF_DEPTH(0), .GAMMA(1)) video_mixer
 	.freeze_sync(),
 
 	.VGA_DE(vga_de),
-	.R((lg_target && gun_mode && (~&status[44:43])) ? {8{lg_target[0]}} : red),
-	.G((lg_target && gun_mode && (~&status[44:43])) ? {8{lg_target[1]}} : green),
-	.B((lg_target && gun_mode && (~&status[44:43])) ? {8{lg_target[2]}} : blue),
+	.R((lg_target && gun_mode && (~&status[44:43])) ? {8{lg_target[0]}} : red_bw),
+	.G((lg_target && gun_mode && (~&status[44:43])) ? {8{lg_target[1]}} : green_bw),
+	.B((lg_target && gun_mode && (~&status[44:43])) ? {8{lg_target[2]}} : blue_bw),
 
 	// Positive pulses.
-	.HSync(hs_c),
-	.VSync(vs_c),
-	.HBlank(hblank_c),
-	.VBlank(vblank_c)
+	.HSync(hs_bw),
+	.VSync(vs_bw),
+	.HBlank(hblank_bw),
+	.VBlank(vblank_bw)
 );
 
 wire [2:0] lg_target;
