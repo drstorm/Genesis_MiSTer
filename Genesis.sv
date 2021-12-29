@@ -366,7 +366,7 @@ hps_io #(.CONF_STR(CONF_STR), .WIDE(1)) hps_io
 	.status(status),
 	.status_in({status[63:8],region_req,status[5:0]}),
 	.status_set(region_set),
-	.status_menumask({en216p,!gun_mode,~dbg_menu,~status[8],~gg_available,~bk_ena}),
+	.status_menumask({en216p,!gun_mode,~dbg_menu,status[8],~gg_available,~bk_ena}),
 
 	.ioctl_download(ioctl_download),
 	.ioctl_index(ioctl_index),
@@ -429,8 +429,67 @@ pll pll
 	.rst(0),
 	.outclk_0(clk_sys),
 	.outclk_1(clk_ram),
+	.reconfig_to_pll(reconfig_to_pll),
+	.reconfig_from_pll(reconfig_from_pll),
 	.locked(locked)
 );
+
+wire [63:0] reconfig_to_pll;
+wire [63:0] reconfig_from_pll;
+wire        cfg_waitrequest;
+reg         cfg_write;
+reg   [5:0] cfg_address;
+reg  [31:0] cfg_data;
+
+pll_cfg pll_cfg
+(
+	.mgmt_clk(CLK_50M),
+	.mgmt_reset(0),
+	.mgmt_waitrequest(cfg_waitrequest),
+	.mgmt_read(0),
+	.mgmt_readdata(),
+	.mgmt_write(cfg_write),
+	.mgmt_address(cfg_address),
+	.mgmt_writedata(cfg_data),
+	.reconfig_to_pll(reconfig_to_pll),
+	.reconfig_from_pll(reconfig_from_pll)
+);
+
+always @(posedge CLK_50M) begin
+	reg pald = 0, pald2 = 0;
+	reg [2:0] state = 0;
+	reg pal_r;
+
+	pald <= PAL;
+	pald2 <= pald;
+
+	cfg_write <= 0;
+	if(pald2 == pald && pald2 != pal_r) begin
+		state <= 1;
+		pal_r <= pald2;
+	end
+
+	if(!cfg_waitrequest) begin
+		if(state) state<=state+1'd1;
+		case(state)
+			1: begin
+					cfg_address <= 0;
+					cfg_data <= 0;
+					cfg_write <= 1;
+				end
+			5: begin
+					cfg_address <= 7;
+					cfg_data <= pal_r ? 2201376125 : 2537930535;
+					cfg_write <= 1;
+				end
+			7: begin
+					cfg_address <= 2;
+					cfg_data <= 0;
+					cfg_write <= 1;
+				end
+		endcase
+	end
+end
 
 ///////////////////////////////////////////////////
 // Code loading for WIDE IO (16 bit)
